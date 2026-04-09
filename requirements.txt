@@ -1,0 +1,5 @@
+Flask
+pytest
+SQLAlchemy
+
+extend it as per your need
