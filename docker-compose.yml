@@ -13,7 +13,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pharma}"]
       interval: 10s
@@ -23,22 +23,23 @@ services:
   app:
     build: .
     container_name: realtimerx_app
-    restart: unless-stopped
+    ports:
+      - "5000:5000"                    # 🔥 ADDED
+    env_file:
+      - .env                           # 🔥 ADDED
     depends_on:
       db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL:         postgresql://${POSTGRES_USER:-pharma}:${POSTGRES_PASSWORD:-pharma123}@db:5432/${POSTGRES_DB:-pharmacydb}
-      LOW_STOCK_THRESHOLD:  ${LOW_STOCK_THRESHOLD:-10}
-      EXPIRY_WARNING_DAYS:  ${EXPIRY_WARNING_DAYS:-30}
-      FLASK_DEBUG:          ${FLASK_DEBUG:-false}
+        condition: service_healthy     # 🔥 UPDATED (was missing proper condition)
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
     ports:
-      - "5000:5000"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
+      - "8081:8080"                    # 🔥 ADDED
+    volumes:
+      - jenkins_home:/var/jenkins_home # 🔥 ADDED
+      - /var/run/docker.sock:/var/run/docker.sock  # 🔥 ADDED (VERY IMPORTANT)
 
 volumes:
   pgdata:
+  jenkins_home:                        # 🔥 ADDED
