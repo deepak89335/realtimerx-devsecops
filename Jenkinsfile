@@ -19,7 +19,7 @@ pipeline {
         stage('Install & Test') {
             steps {
                 sh '''
-                    python3 -m pip install --quiet -r requirements.txt
+                    python3 -m pip install --break-system-packages -r requirements.txt
                     python3 -m pytest tests/ -v --tb=short
                 '''
             }
