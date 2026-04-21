@@ -49,6 +49,9 @@ def days_until_expiry(expiry: date) -> int:
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
+@app.route("/")
+def home():
+    return "Pharmacy API is running"
 
 @app.route("/health")
 def health():

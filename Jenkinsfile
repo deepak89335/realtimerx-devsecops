@@ -19,8 +19,8 @@ pipeline {
         stage('Install & Test') {
             steps {
                 sh '''
-                    pip install --quiet -r app/requirements.txt
-                    python -m pytest tests/ -v --tb=short
+                    python3 -m pip install --break-system-packages -r requirements.txt
+                    python3 -m pytest tests/ -v --tb=short
                 '''
             }
             post {
