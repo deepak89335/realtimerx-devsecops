@@ -1,6 +1,8 @@
 Flask
 pytest
 SQLAlchemy
+psycopg2-binary
+Flask-SQLAlchemy
 
-extend it as per your need
+# extend it as per your need
 # test protection
