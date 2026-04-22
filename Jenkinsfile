@@ -84,11 +84,6 @@ pipeline {
         }
 
         stage('Deploy to Production') {
-	    when {
-		anyOf {
-        	  branch 'develop'
-    		}
-	    }
             input {
                 message "Deploy build ${env.BUILD_NUMBER} to production?"
                 ok "Yes, deploy"
