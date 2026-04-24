@@ -1,9 +1,9 @@
 pipeline {
     agent any
     environment {
-        IMAGE_NAME    = "realtimerx"
-        IMAGE_TAG     = "${env.BUILD_NUMBER}"
-        COMPOSE_FILE  = "docker-compose.yml"
+        IMAGE_NAME   = "realtimerx"
+        IMAGE_TAG    = "${env.BUILD_NUMBER}"
+        COMPOSE_FILE = "docker-compose.yml"
     }
     stages {
 
@@ -27,7 +27,7 @@ pipeline {
         stage('Install & Test') {
             steps {
                 sh '''
-                    python3 -m pip install --break-system-packages -r app/requirements.txt
+                    python3 -m pip install --break-system-packages -r requirements.txt
                     python3 -m pytest tests/ -v --tb=short
                 '''
             }
@@ -45,7 +45,7 @@ pipeline {
             steps {
                 sh '''
                     pip3 install --break-system-packages bandit || true
-                    bandit -r app/app.py -f txt -o bandit_report.txt || true
+                    bandit -r app/ -f txt -o bandit_report.txt || true
                     cat bandit_report.txt
                     if grep -E "Severity: (HIGH|CRITICAL)" bandit_report.txt; then
                         echo "SAST FAILED: High/Critical severity issue found."
@@ -65,7 +65,7 @@ pipeline {
             steps {
                 sh '''
                     pip3 install --break-system-packages pip-audit || true
-                    pip-audit -r app/requirements.txt --format=text > pip_audit_report.txt 2>&1 || true
+                    pip-audit -r requirements.txt --format=text > pip_audit_report.txt 2>&1 || true
                     cat pip_audit_report.txt
                     if grep -i "critical" pip_audit_report.txt; then
                         echo "DEPENDENCY SCAN FAILED: Critical CVE found."
@@ -114,10 +114,10 @@ pipeline {
                     sh '''
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5001/" .env
-                        docker compose down || true
-                        docker compose up -d --build
+                        docker-compose down || true
+                        docker-compose up -d --build
                         sleep 20
-                        docker compose ps
+                        docker-compose ps
                     '''
                 }
             }
@@ -163,8 +163,8 @@ pipeline {
                         echo "Production deploy approved — deploying..."
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5000/" .env
-                        docker compose down || true
-                        docker compose up -d
+                        docker-compose down || true
+                        docker-compose up -d
                         sleep 20
                         STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
                         if [ "$STATUS" != "200" ]; then
