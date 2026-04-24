@@ -92,9 +92,8 @@ pipeline {
         stage('Container Image Scan') {
             steps {
                 sh """
-                    trivy image --exit-code 0 --severity HIGH,CRITICAL \
+                    trivy image --exit-code 1 --severity HIGH,CRITICAL \
                         --format table ${IMAGE_NAME}:${IMAGE_TAG} | tee trivy_report.txt
-                    echo "Trivy scan complete."
                 """
             }
             post {
@@ -103,6 +102,23 @@ pipeline {
                 }
             }
         }
+	
+	stage('Security Gate') {
+            steps {
+                script {
+                    def vulnCount = sh(
+                        script: "grep -E 'CRITICAL|HIGH' trivy_report.txt | wc -l",
+                        returnStdout: true
+                    ).trim()
+
+                    if (vulnCount.toInteger() > 0) {
+                        error "SECURITY GATE FAILED: ${vulnCount} vulnerabilities found. Blocking deployment."
+                    } else {
+                        echo "Security Gate Passed: No critical vulnerabilities."
+                    }
+        }
+    }
+}
 
         stage('Deploy to Staging') {
             when {
