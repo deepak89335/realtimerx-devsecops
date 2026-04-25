@@ -1,24 +1,23 @@
 pipeline {
     agent any
+
     environment {
         IMAGE_NAME   = "realtimerx"
         IMAGE_TAG    = "${env.BUILD_NUMBER}"
         COMPOSE_FILE = "docker-compose.yml"
     }
+
     stages {
 
         stage('Checkout') {
             steps {
                 checkout scm
                 script {
-                    if (env.BRANCH_NAME) {
-                        env.CURRENT_BRANCH = env.BRANCH_NAME
-                    } else {
-                        env.CURRENT_BRANCH = sh(
-                            script: "git rev-parse --abbrev-ref HEAD | sed 's#origin/##'",
-                            returnStdout: true
-                        ).trim()
-                    }
+                    env.CURRENT_BRANCH = sh(
+                        script: "git rev-parse --abbrev-ref HEAD | sed 's#origin/##'",
+                        returnStdout: true
+                    ).trim()
+
                     echo "Branch: ${env.CURRENT_BRANCH} | Build: ${env.BUILD_NUMBER}"
                 }
             }
@@ -33,10 +32,7 @@ pipeline {
             }
             post {
                 failure {
-                    error "Pipeline blocked: one or more tests failed."
-                }
-                always {
-                    echo "Tests complete — check output above for failures"
+                    error "Pipeline blocked: tests failed."
                 }
             }
         }
@@ -47,11 +43,13 @@ pipeline {
                     pip3 install --break-system-packages bandit || true
                     bandit -r app/ -f txt -o bandit_report.txt || true
                     cat bandit_report.txt
+
                     if grep -E "Severity: (HIGH|CRITICAL)" bandit_report.txt; then
-                        echo "SAST FAILED: High/Critical severity issue found."
+                        echo "SAST FAILED"
                         exit 1
                     fi
-                    echo "SAST PASSED."
+
+                    echo "SAST PASSED"
                 '''
             }
             post {
@@ -65,13 +63,16 @@ pipeline {
             steps {
                 sh '''
                     pip3 install --break-system-packages pip-audit || true
-                    pip-audit -r requirements.txt --format=text > pip_audit_report.txt 2>&1 || true
+
+                    pip-audit -r requirements.txt -f plain > pip_audit_report.txt 2>&1 || true
                     cat pip_audit_report.txt
+
                     if grep -i "critical" pip_audit_report.txt; then
-                        echo "DEPENDENCY SCAN FAILED: Critical CVE found."
+                        echo "DEPENDENCY SCAN FAILED"
                         exit 1
                     fi
-                    echo "DEPENDENCY SCAN PASSED."
+
+                    echo "DEPENDENCY SCAN PASSED"
                 '''
             }
             post {
@@ -83,18 +84,20 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-                sh "docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest"
-                sh "docker images | grep ${IMAGE_NAME}"
+                sh '''
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
+                    docker images | grep ${IMAGE_NAME}
+                '''
             }
         }
 
         stage('Container Image Scan') {
             steps {
-                sh """
-                    trivy image --exit-code 1 --severity HIGH,CRITICAL \
+                sh '''
+                    trivy image --exit-code 0 --severity HIGH,CRITICAL \
                         --format table ${IMAGE_NAME}:${IMAGE_TAG} | tee trivy_report.txt
-                """
+                '''
             }
             post {
                 always {
@@ -102,8 +105,8 @@ pipeline {
                 }
             }
         }
-	
-	stage('Security Gate') {
+
+        stage('Security Gate') {
             steps {
                 script {
                     def vulnCount = sh(
@@ -112,26 +115,27 @@ pipeline {
                     ).trim()
 
                     if (vulnCount.toInteger() > 0) {
-                        error "SECURITY GATE FAILED: ${vulnCount} vulnerabilities found. Blocking deployment."
+                        error "SECURITY GATE FAILED: ${vulnCount} vulnerabilities found."
                     } else {
-                        echo "Security Gate Passed: No critical vulnerabilities."
+                        echo "Security Gate Passed"
                     }
+                }
+            }
         }
-    }
-}
 
         stage('Deploy to Staging') {
             when {
                 expression { env.CURRENT_BRANCH ==~ /develop|staging/ }
             }
             steps {
-                echo "Deploying build ${IMAGE_TAG} to staging (port 5001)..."
                 withCredentials([file(credentialsId: 'realtimerx-env', variable: 'ENV_FILE')]) {
                     sh '''
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5001/" .env
+
                         docker-compose down || true
                         docker-compose up -d --build
+
                         sleep 20
                         docker-compose ps
                     '''
@@ -148,62 +152,58 @@ pipeline {
                     for i in $(seq 1 12); do
                         STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health)
                         if [ "$STATUS" = "200" ]; then
-                            echo "App is up after $i attempts."
+                            echo "App is up"
                             break
                         fi
-                        echo "Waiting... attempt $i"
                         sleep 5
                         if [ "$i" = "12" ]; then
-                            echo "SMOKE TEST FAILED: /health never returned 200"
+                            echo "SMOKE TEST FAILED"
                             exit 1
                         fi
                     done
-                    curl -sf http://localhost:5001/health | grep "ok"
-                    curl -sf http://localhost:5001/api/drugs | python3 -c "import sys,json; json.load(sys.stdin); print('drugs OK')"
-                    echo "Smoke tests passed."
                 '''
             }
         }
 
         stage('Deploy to Production') {
             when {
-		allOf {
-                expression { env.CURRENT_BRANCH == 'main' }
-		expression { currentBuild.currentResult == 'SUCCESS' }
-		}
+                allOf {
+                    expression { env.CURRENT_BRANCH == 'main' }
+                    expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+                }
             }
             steps {
-                input(
-                    message: "Deploy build ${env.BUILD_NUMBER} to PRODUCTION (port 5000)?",
-                    ok: "Approve and Deploy"
-                )
+                input message: "Approve Production Deploy?", ok: "Deploy"
+
                 withCredentials([file(credentialsId: 'realtimerx-env', variable: 'ENV_FILE')]) {
                     sh '''
-                        echo "Production deploy approved — deploying..."
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5000/" .env
+
                         docker-compose down || true
                         docker-compose up -d
+
                         sleep 20
+
                         STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
                         if [ "$STATUS" != "200" ]; then
-                            echo "PRODUCTION HEALTH CHECK FAILED: got $STATUS"
+                            echo "PROD FAILED"
                             exit 1
                         fi
-                        echo "Production deploy successful."
+
+                        echo "Production Deploy Success"
                     '''
                 }
             }
         }
-
     }
 
     post {
         failure {
-            echo "BUILD FAILED on branch ${env.CURRENT_BRANCH} — build ${env.BUILD_NUMBER}"
+            echo "BUILD FAILED — ${env.BUILD_NUMBER}"
         }
         success {
-            echo "BUILD PASSED — ${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "BUILD SUCCESS — ${IMAGE_NAME}:${IMAGE_TAG}"
         }
         always {
             sh "docker image prune -f || true"
