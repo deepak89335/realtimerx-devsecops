@@ -167,7 +167,10 @@ pipeline {
 
         stage('Deploy to Production') {
             when {
+		allOf {
                 expression { env.CURRENT_BRANCH == 'main' }
+		expression { currentBuild.currentResult == 'SUCCESS' }
+		}
             }
             steps {
                 input(
