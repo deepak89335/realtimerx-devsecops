@@ -115,28 +115,50 @@ pipeline {
         stage('Security Gate') {
             steps {
                 script {
-                    // FIX: count only actual data rows (lines with CVE- pattern)
-                    // not header/border lines that also contain HIGH/CRITICAL text
-                    def criticalCount = sh(
-                        script: "grep -c 'CRITICAL' trivy_report.txt || true",
+                    def criticalFixable = sh(
+                        script: """
+                            grep 'CVE-' trivy_report.txt | \
+                            grep 'CRITICAL' | \
+                            grep -v 'will_not_fix' | \
+                            grep -v '│ affected' | \
+                            wc -l || true
+                        """,
                         returnStdout: true
                     ).trim().toInteger()
 
-                    def highCount = sh(
-                        script: "grep -c 'HIGH' trivy_report.txt || true",
+                    def highFixable = sh(
+                        script: """
+                            grep 'CVE-' trivy_report.txt | \
+                            grep 'HIGH' | \
+                            grep -v 'will_not_fix' | \
+                            grep -v '│ affected' | \
+                            wc -l || true
+                        """,
                         returnStdout: true
                     ).trim().toInteger()
 
-                    echo "Trivy found — CRITICAL: ${criticalCount}, HIGH: ${highCount}"
+                    def criticalTotal = sh(
+                        script: "grep 'CVE-' trivy_report.txt | grep -c 'CRITICAL' || true",
+                        returnStdout: true
+                    ).trim().toInteger()
 
-                    // RULE: CRITICAL always blocks (all branches)
-                    if (criticalCount > 0) {
-                        error "SECURITY GATE FAILED: ${criticalCount} CRITICAL vulnerabilities found. Fix Dockerfile before deploying."
+                    def highTotal = sh(
+                        script: "grep 'CVE-' trivy_report.txt | grep -c 'HIGH' || true",
+                        returnStdout: true
+                    ).trim().toInteger()
+
+                    echo "=== Security Gate Report ==="
+                    echo "CRITICAL — Total: ${criticalTotal} | Fixable: ${criticalFixable}"
+                    echo "HIGH     — Total: ${highTotal} | Fixable: ${highFixable}"
+                    echo "============================"
+                    echo "Note: Unfixable CVEs (will_not_fix/no Debian patch) reported but do not block."
+
+                    if (criticalFixable > 0) {
+                        error "SECURITY GATE FAILED: ${criticalFixable} CRITICAL CVEs have patches. Update Dockerfile."
                     }
 
-                    // RULE: HIGH blocks only production (main branch)
-                    if (env.CURRENT_BRANCH == 'main' && highCount > 0) {
-                        error "SECURITY GATE FAILED: ${highCount} HIGH vulnerabilities block production. Fix before merging to main."
+                    if (env.CURRENT_BRANCH == 'main' && highFixable > 0) {
+                        error "SECURITY GATE FAILED: ${highFixable} HIGH CVEs have patches. Fix before production."
                     }
 
                     echo "Security Gate PASSED for branch: ${env.CURRENT_BRANCH}"
@@ -154,7 +176,6 @@ pipeline {
                     sh '''
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5001/" .env
-                        # FIX: use "docker compose" (v2) not "docker-compose" (v1)
                         docker compose down || true
                         docker compose up -d --build
                         sleep 20
