@@ -67,6 +67,7 @@ pipeline {
             steps {
                 sh '''
                     pip3 install --break-system-packages pip-audit || true
+                    # FIX: correct format flag is "text" not "plain"
                     pip-audit -r requirements.txt --format=text > pip_audit_report.txt 2>&1 || true
                     cat pip_audit_report.txt
                     if grep -i "critical" pip_audit_report.txt; then
