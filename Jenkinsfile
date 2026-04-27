@@ -232,7 +232,7 @@ print(f'GATE_HIGH_FIXABLE={high_fixable}')
             echo "Running smoke tests inside container..."
 
             for i in $(seq 1 12); do
-                STATUS=$(docker compose exec -T app python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/health').getcode())" 2>/dev/null || true)
+                STATUS=$(docker-compose exec -T app python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/health').getcode())" 2>/dev/null || true)
 
                 if [ "$STATUS" = "200" ]; then
                     echo "App is up after $i attempts."
@@ -248,7 +248,7 @@ print(f'GATE_HIGH_FIXABLE={high_fixable}')
                 fi
             done
 
-            docker compose exec -T app python3 -c "
+            docker-compose exec -T app python3 -c "
 import json, urllib.request
 data = urllib.request.urlopen('http://127.0.0.1:5000/api/drugs').read()
 json.loads(data)
@@ -281,7 +281,7 @@ print('drugs endpoint OK')
                 echo "Waiting for app to be ready..."
 
                 for i in $(seq 1 12); do
-                    STATUS=$(docker compose exec -T app python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/health').getcode())" 2>/dev/null || true)
+                    STATUS=$(docker-compose exec -T app python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/health').getcode())" 2>/dev/null || true)
 
                     if [ "$STATUS" = "200" ]; then
                         echo "Production app is healthy."
