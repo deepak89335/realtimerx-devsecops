@@ -67,7 +67,6 @@ pipeline {
             steps {
                 sh '''
                     pip3 install --break-system-packages pip-audit || true
-                    # FIX: correct format flag is "text" not "plain"
                     pip-audit -r requirements.txt --format=text > pip_audit_report.txt 2>&1 || true
                     cat pip_audit_report.txt
                     if grep -i "critical" pip_audit_report.txt; then
@@ -113,64 +112,58 @@ pipeline {
         }
 
         stage('Security Gate') {
-    steps {
-        script {
-            // Count only CRITICAL CVEs that have a fix available
-            // Excludes: will_not_fix, affected (no patch exists yet)
-            def criticalFixable = sh(
-                script: """
-                    grep 'CRITICAL' trivy_report.txt | \
-                    grep -v 'will_not_fix' | \
-                    grep -v '│ affected' | \
-                    grep 'CVE-' | \
-                    wc -l || true
-                """,
-                returnStdout: true
-            ).trim().toInteger()
+            steps {
+                script {
+                    def criticalFixable = sh(
+                        script: """
+                            grep 'CVE-' trivy_report.txt | \
+                            grep 'CRITICAL' | \
+                            grep -v 'will_not_fix' | \
+                            grep -v '│ affected' | \
+                            wc -l || true
+                        """,
+                        returnStdout: true
+                    ).trim().toInteger()
 
-            // Count HIGH CVEs that have a fix available
-            def highFixable = sh(
-                script: """
-                    grep 'HIGH' trivy_report.txt | \
-                    grep -v 'will_not_fix' | \
-                    grep -v '│ affected' | \
-                    grep 'CVE-' | \
-                    wc -l || true
-                """,
-                returnStdout: true
-            ).trim().toInteger()
+                    def highFixable = sh(
+                        script: """
+                            grep 'CVE-' trivy_report.txt | \
+                            grep 'HIGH' | \
+                            grep -v 'will_not_fix' | \
+                            grep -v '│ affected' | \
+                            wc -l || true
+                        """,
+                        returnStdout: true
+                    ).trim().toInteger()
 
-            // Full counts for reporting
-            def criticalTotal = sh(
-                script: "grep 'CVE-' trivy_report.txt | grep -c 'CRITICAL' || true",
-                returnStdout: true
-            ).trim().toInteger()
+                    def criticalTotal = sh(
+                        script: "grep 'CVE-' trivy_report.txt | grep -c 'CRITICAL' || true",
+                        returnStdout: true
+                    ).trim().toInteger()
 
-            def highTotal = sh(
-                script: "grep 'CVE-' trivy_report.txt | grep -c 'HIGH' || true",
-                returnStdout: true
-            ).trim().toInteger()
+                    def highTotal = sh(
+                        script: "grep 'CVE-' trivy_report.txt | grep -c 'HIGH' || true",
+                        returnStdout: true
+                    ).trim().toInteger()
 
-            echo "=== Security Gate Report ==="
-            echo "CRITICAL total: ${criticalTotal} | Fixable: ${criticalFixable}"
-            echo "HIGH total: ${highTotal} | Fixable: ${highFixable}"
-            echo "============================"
+                    echo "=== Security Gate Report ==="
+                    echo "CRITICAL — Total: ${criticalTotal} | Fixable: ${criticalFixable}"
+                    echo "HIGH     — Total: ${highTotal} | Fixable: ${highFixable}"
+                    echo "============================"
+                    echo "Note: Unfixable CVEs (will_not_fix/no Debian patch) reported but do not block."
 
-            // Block on CRITICAL that actually have patches (all branches)
-            if (criticalFixable > 0) {
-                error "SECURITY GATE FAILED: ${criticalFixable} CRITICAL vulnerabilities have fixes available. Update Dockerfile."
+                    if (criticalFixable > 0) {
+                        error "SECURITY GATE FAILED: ${criticalFixable} CRITICAL CVEs have patches. Update Dockerfile."
+                    }
+
+                    if (env.CURRENT_BRANCH == 'main' && highFixable > 0) {
+                        error "SECURITY GATE FAILED: ${highFixable} HIGH CVEs have patches. Fix before production."
+                    }
+
+                    echo "Security Gate PASSED for branch: ${env.CURRENT_BRANCH}"
+                }
             }
-
-            // Block HIGH with fixes on main branch only
-            if (env.CURRENT_BRANCH == 'main' && highFixable > 0) {
-                error "SECURITY GATE FAILED: ${highFixable} HIGH vulnerabilities have fixes available. Fix before production."
-            }
-
-            echo "Security Gate PASSED for branch: ${env.CURRENT_BRANCH}"
-            echo "Note: ${criticalTotal} CRITICAL and ${highTotal} HIGH CVEs exist with no fix available from Debian yet."
         }
-    }
-}
 
         stage('Deploy to Staging') {
             when {
@@ -182,7 +175,6 @@ pipeline {
                     sh '''
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5001/" .env
-                        # FIX: use "docker compose" (v2) not "docker-compose" (v1)
                         docker compose down || true
                         docker compose up -d --build
                         sleep 20
