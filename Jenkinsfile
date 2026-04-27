@@ -261,7 +261,7 @@ print('drugs endpoint OK')
 
         stage('Deploy to Production') {
     when {
-        expression { env.CURRENT_BRANCH == 'main' }
+        expression { env.CURRENT_BRANCH ==~ /develop|main/ }
     }
     steps {
         input(
