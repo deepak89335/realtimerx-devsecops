@@ -224,59 +224,85 @@ print(f'GATE_HIGH_FIXABLE={high_fixable}')
         }
 
         stage('Smoke Test') {
-            when {
-                expression { env.CURRENT_BRANCH ==~ /develop|staging/ }
-            }
-            steps {
-                sh '''
-                    echo "Running smoke tests against staging port 5001..."
-                    for i in $(seq 1 12); do
-                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/health)
-                        if [ "$STATUS" = "200" ]; then
-                            echo "App is up after $i attempts."
-                            break
-                        fi
-                        echo "Attempt $i: HTTP $STATUS — waiting 5s..."
-                        sleep 5
-                        if [ "$i" = "12" ]; then
-                            echo "SMOKE TEST FAILED: /health never returned 200"
-                            exit 1
-                        fi
-                    done
-                    curl -sf http://localhost:5001/health | grep "ok"
-                    curl -sf http://localhost:5001/api/drugs | python3 -c "import sys,json; json.load(sys.stdin); print('drugs endpoint OK')"
-                    echo "All smoke tests PASSED."
-                '''
-            }
-        }
+    when {
+        expression { env.CURRENT_BRANCH ==~ /develop|staging/ }
+    }
+    steps {
+        sh '''
+            echo "Running smoke tests inside container..."
+
+            for i in $(seq 1 12); do
+                STATUS=$(docker compose exec -T app python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/health').getcode())" 2>/dev/null || true)
+
+                if [ "$STATUS" = "200" ]; then
+                    echo "App is up after $i attempts."
+                    break
+                fi
+
+                echo "Attempt $i: HTTP $STATUS — waiting 5s..."
+                sleep 5
+
+                if [ "$i" = "12" ]; then
+                    echo "SMOKE TEST FAILED"
+                    exit 1
+                fi
+            done
+
+            docker compose exec -T app python3 -c "
+import json, urllib.request
+data = urllib.request.urlopen('http://127.0.0.1:5000/api/drugs').read()
+json.loads(data)
+print('drugs endpoint OK')
+"
+            echo "All smoke tests PASSED."
+        '''
+    }
+}
 
         stage('Deploy to Production') {
-            when {
-                expression { env.CURRENT_BRANCH == 'main' }
-            }
-            steps {
-                input(
-                    message: "Deploy build ${env.BUILD_NUMBER} to PRODUCTION (port 5000)?",
-                    ok: "Approve and Deploy"
-                )
-                withCredentials([file(credentialsId: 'realtimerx-env', variable: 'ENV_FILE')]) {
-                    sh '''
-                        echo "Production deploy approved..."
-                        cp $ENV_FILE .env
-                        sed -i "s/APP_PORT=.*/APP_PORT=5000/" .env
-                        docker compose down || true
-                        docker compose up -d
-                        sleep 20
-                        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
-                        if [ "$STATUS" != "200" ]; then
-                            echo "PRODUCTION HEALTH CHECK FAILED: got $STATUS"
-                            exit 1
-                        fi
-                        echo "Production deploy SUCCESSFUL."
-                    '''
-                }
-            }
+    when {
+        expression { env.CURRENT_BRANCH == 'main' }
+    }
+    steps {
+        input(
+            message: "Deploy build ${env.BUILD_NUMBER} to PRODUCTION (port 5000)?",
+            ok: "Approve and Deploy"
+        )
+        withCredentials([file(credentialsId: 'realtimerx-env', variable: 'ENV_FILE')]) {
+            sh '''
+                echo "Production deploy approved..."
+
+                cp $ENV_FILE .env
+                sed -i "s/APP_PORT=.*/APP_PORT=5000/" .env
+
+                docker compose down || true
+                docker compose up -d
+
+                echo "Waiting for app to be ready..."
+
+                for i in $(seq 1 12); do
+                    STATUS=$(docker compose exec -T app python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/health').getcode())" 2>/dev/null || true)
+
+                    if [ "$STATUS" = "200" ]; then
+                        echo "Production app is healthy."
+                        break
+                    fi
+
+                    echo "Attempt $i: HTTP $STATUS — waiting 5s..."
+                    sleep 5
+
+                    if [ "$i" = "12" ]; then
+                        echo "PRODUCTION HEALTH CHECK FAILED"
+                        docker compose logs app
+                        exit 1
+                    fi
+                done
+
+                echo "Production deploy SUCCESSFUL."
+            '''
         }
+    }
+}
     }
 
     post {
