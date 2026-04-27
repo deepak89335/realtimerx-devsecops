@@ -1,23 +1,35 @@
-FROM python:3.11-slim-bookworm
-RUN apt-get update && apt-get upgrade -y && apt-get clean
+# Use latest slim image with fewer vulnerabilities
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install dependencies
+# Install system deps + force security upgrades on ALL packages
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip + packages
+RUN pip install --upgrade pip wheel setuptools
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY app/ ./app
 COPY tests/ ./tests
 
-# Set environment variables
+# Non-root user
+RUN useradd -m appuser
+USER appuser
+
 ENV FLASK_DEBUG=false
 ENV LOW_STOCK_THRESHOLD=10
 ENV EXPIRY_WARNING_DAYS=30
 
-# Expose port
 EXPOSE 5000
 
-# Run app
 CMD ["python", "app/app.py"]
