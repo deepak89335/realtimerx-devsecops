@@ -280,8 +280,20 @@ print(f'GATE_HIGH_FIXABLE={high_fixable}')
     }
 
     post {
-        failure { echo "BUILD FAILED — branch: ${env.CURRENT_BRANCH} | build: ${env.BUILD_NUMBER}" }
-        success { echo "BUILD PASSED — ${IMAGE_NAME}:${IMAGE_TAG} on ${env.CURRENT_BRANCH}" }
-        always  { sh "docker image prune -f || true" }
+        failure {
+            echo "BUILD FAILED — branch: ${env.CURRENT_BRANCH} | build: ${env.BUILD_NUMBER}"
+        }
+        success {
+            echo "BUILD PASSED — ${IMAGE_NAME}:${IMAGE_TAG} on ${env.CURRENT_BRANCH}"
+        }
+        always {
+            script {
+                try {
+                    sh "docker image prune -f || true"
+                } catch (err) {
+                    echo "Post cleanup skipped: ${err.message}"
+                }
+            }
+        }
     }
 }
