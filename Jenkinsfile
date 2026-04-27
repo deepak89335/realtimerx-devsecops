@@ -214,10 +214,10 @@ print(f'GATE_HIGH_FIXABLE={high_fixable}')
                     sh '''
                         cp $ENV_FILE .env
                         sed -i "s/APP_PORT=.*/APP_PORT=5001/" .env
-                        docker compose down || true
-                        docker compose up -d --build
+                        docker-compose down || true
+                        docker-compose up -d --build
                         sleep 20
-                        docker compose ps
+                        docker-compose ps
                     '''
                 }
             }
@@ -275,8 +275,8 @@ print('drugs endpoint OK')
                 cp $ENV_FILE .env
                 sed -i "s/APP_PORT=.*/APP_PORT=5000/" .env
 
-                docker compose down || true
-                docker compose up -d
+                docker-compose down || true
+                docker-compose up -d
 
                 echo "Waiting for app to be ready..."
 
