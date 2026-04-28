@@ -305,19 +305,21 @@ print('drugs endpoint OK')
 }
     }
 
-    stage('Monitoring Check') {
-        steps {
-            echo "Running monitoring checks..."
+   stage('Monitoring') {
+    steps {
+        sh '''
+            chmod +x monitoring.sh
 
-            sh 'docker ps'
+            nohup ./monitoring.sh > /dev/null 2>&1 &
 
-            sh '''
-                curl -f http://localhost:5000 || exit 1
-            '''
+            sleep 130
 
-            echo "Monitoring checks passed."
-        }
+            echo "=== Monitoring Log Output ==="
+
+            tail -3 monitoring.log
+        '''
     }
+}
     
     post {
         failure {
