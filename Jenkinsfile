@@ -305,6 +305,20 @@ print('drugs endpoint OK')
 }
     }
 
+    stage('Monitoring Check') {
+        steps {
+            echo "Running monitoring checks..."
+
+            sh 'docker ps'
+
+            sh '''
+                curl -f http://localhost:5000 || exit 1
+            '''
+
+            echo "Monitoring checks passed."
+        }
+    }
+    
     post {
         failure {
             echo "BUILD FAILED — branch: ${env.CURRENT_BRANCH} | build: ${env.BUILD_NUMBER}"
